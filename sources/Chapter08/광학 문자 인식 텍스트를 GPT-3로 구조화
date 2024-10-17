@@ -1,0 +1,108 @@
+// 이 함수는 HTTP POST 요청을 처리합니다.
+function doPost(e) {
+  return handleRequest(e);
+}
+
+// 이 함수는 들어오는 POST 요청을 처리합니다.
+function handleRequest(e) {
+  // HTTP 응답으로 반환될 텍스트 출력을 생성합니다.
+  const output = ContentService.createTextOutput();
+
+  // POST 데이터에서 JSON 문자열을 추출합니다.
+  const jsonString = e.postData.contents;
+
+  // JSON 문자열을 JavaScript 객체로 파싱합니다.
+  const jsonData = JSON.parse(jsonString);
+
+  // 파싱된 JSON에서 특정 데이터를 추출합니다.
+  const txt = jsonData.txt;
+  
+  const json = {
+    "invoiceNumber": "string",
+    "date": "string",
+    "dueDate": "string",
+    "invoiceTo": {
+      "name": "string",
+      "company": "string",
+    },
+    "project": "string",
+    "subtotal": "number",
+    "tax": "number",
+    "adjustments": "number",
+    "total": "number"
+  }
+
+
+  // 추출된 데이터를 'ai' 함수에 전달합니다.
+  const result = ai(txt, json);
+
+  // 요청에 콜백 파라미터가 있는지 확인합니다.
+  const callback = e.parameters.callback;
+  if (callback === undefined) {
+    // 콜백이 제공되지 않은 경우 결과를 JSON으로 반환합니다.
+    output.setContent(JSON.stringify(result));
+  } else {
+    // 콜백이 제공된 경우, 결과를 콜백 함수로 감싸서 반환합니다.
+    output.setContent(callback + "(" + JSON.stringify(result) + ")");
+  }
+
+  // 응답의 MIME 유형을 JSON으로 설정합니다.
+  output.setMimeType(ContentService.MimeType.JSON);
+
+  // 응답을 반환합니다.
+  return output;
+}
+
+// 이 함수는 AI 관련 처리를 수행합니다.
+function ai(txt, json) {
+  // GPT-3.5 및 GPT-4와 같은 대형 언어 모델은 텍스트를 입력으로 사용하므로, json 객체를 문자열화해야 합니다.
+  const jsonString = JSON.stringify(json)
+
+  // 입력 데이터에 기반하여 프롬프트를 생성합니다.
+  let prompt = "use the [text] extracted from an invoice using OCR. Structure it as a JSON object with the structure shown in the [JSON model].\n[text]=" + txt + "\n[JSON model] = "+ jsonString + "n\keep the same structure of the JSON as in the model, including the same keys.";
+
+  // 지정된 파라미터로 데이터를 생성합니다.
+  const data = {
+    "model": "gpt-3.5-turbo-16k-0613", //"gpt-4-0613", //
+    "messages": [{"role": "user", "content": prompt}],
+    "temperature": .9
+  };
+
+  // API에 HTTP POST 요청을 수행하기 위한 옵션을 설정합니다.
+  const options = {
+    'method': 'post',
+    'headers': { 'Authorization': 'Bearer OPENAI_API_KEY' },
+    'contentType': 'application/json',
+    'payload': JSON.stringify(data),
+    'muteHttpExceptions': true
+  };
+
+  // API 엔드포인트의 URL을 정의합니다.
+  const url = "https://api.openai.com/v1/chat/completions";
+
+  try {
+    // API에 HTTP POST 요청을 보냅니다.
+    const response = UrlFetchApp.fetch(url, options);
+    
+    // 응답 JSON을 파싱합니다.
+    const res = JSON.parse(response.getContentText());
+    console.log(res)
+
+    // 응답에서 오류가 있는지 확인하고 처리합니다.
+    if (res.error) {
+      console.log("Error: " + res.error.type + " message: " + res.error.message);
+      return res.error;
+    }
+
+    // AI가 생성한 콘텐츠를 추출하고 공백을 제거합니다.
+    output = res.choices[0].message.content.trim();
+    
+    // AI가 생성한 출력을 반환합니다.
+
+    console.log(JSON.parse(output))
+    return JSON.parse(output);
+  } catch (error) {
+    console.log("Error: " + error);
+    return "An error occurred: " + error;
+  }
+}
